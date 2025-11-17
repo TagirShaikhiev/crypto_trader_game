@@ -9,6 +9,7 @@ export default defineConfig({
         host: resolve(__dirname, 'host.html'),  // Игра
       },
     },
+    chunkSizeWarningLimit: 1000,
   },
   server: {
     port: 5173
