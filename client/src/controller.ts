@@ -1,7 +1,8 @@
 import { io, Socket } from 'socket.io-client';
 
-const SERVER_URL = 'http://localhost:3000';
-const socket: Socket = io(SERVER_URL);
+// const SERVER_URL = 'http://localhost:3000';
+// локальный сервер
+const socket: Socket = io();
 
 // Элементы DOM
 const loginScreen = document.getElementById('login-screen')!;
@@ -30,6 +31,7 @@ jumpBtn.addEventListener('click', () => {
 
 // Ответы сервера
 socket.on('joinedSuccess', (roomCode) => {
+    console.log(roomCode);
     loginScreen.classList.remove('active');
     gameScreen.classList.add('active');
     document.getElementById('player-display')!.innerText = nameInput.value;

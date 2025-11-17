@@ -7,11 +7,25 @@ import { RoomManager } from './RoomManager.js';
 import type { ClientToServerEvents, ServerToClientEvents, SocketData } from './types.js';
 import { fileURLToPath } from 'url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+
+// const __filename = fileURLToPath(import.meta.url);
+// const __dirname = path.dirname(__filename);
 
 const app = express();
 const httpServer = createServer(app);
+
+// Указываем, что статика лежит в папке client/dist (относительно скомпилированного server.js)
+// В Docker мы положим их рядом, но для локального билда путь такой:
+const clientPath = path.join(__dirname, '../client/dist');
+app.use(express.static(clientPath));
+
+app.get('/', (req, res) => {
+    res.sendFile(path.join(clientPath, 'index.html'));
+});
+
+app.get('/host', (req, res) => {
+    res.sendFile(path.join(clientPath, 'host.html'));
+});
 
 // Настройка CORS важна, если фронт будет на другом порту (например, React/Vite)
 const io = new Server<ClientToServerEvents, ServerToClientEvents, {}, SocketData>(httpServer, {

@@ -44,7 +44,7 @@ export class RoomManager {
     for (const [code, room] of this.rooms) {
       const index = room.players.findIndex(p => p.id === socketId);
       if (index !== -1) {
-        const removedPlayer = room.players[index];
+        const removedPlayer = room.players[index]!;
         room.players.splice(index, 1);
         
         // Если комната пуста и хост отключился — удаляем комнату (логику можно усложнить)
