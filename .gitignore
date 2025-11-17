@@ -1,0 +1,29 @@
+# --- Зависимости ---
+node_modules/
+
+# --- Сборка (Compiled Output) ---
+# Сюда TypeScript складывает готовые .js файлы
+dist/
+build/
+out/
+
+# --- TypeScript файлы кэша (для инкрементальной сборки) ---
+*.tsbuildinfo
+
+# --- Логи и временные файлы ---
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# --- Настройки среды (ВАЖНО: никогда не коммитьте ключи!) ---
+.env
+.env.local
+.env.*.local
+
+# --- Операционные системы и редакторы ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
