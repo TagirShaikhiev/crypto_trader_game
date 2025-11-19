@@ -2,33 +2,16 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Game Controller</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Market Manipulator</title>
     <style>
-      body { background: #222; color: white; font-family: sans-serif; text-align: center; padding: 20px; touch-action: manipulation; }
-      input { font-size: 24px; padding: 10px; width: 80%; margin-bottom: 15px; text-transform: uppercase; border-radius: 8px; border: none;}
-      button { font-size: 24px; padding: 15px 30px; background: #3b82f6; color: white; border: none; border-radius: 8px; width: 100%; cursor: pointer; }
-      button:active { background: #2563eb; transform: scale(0.98); }
-      .screen { display: none; }
-      .active { display: block; }
-      #jump-btn { height: 200px; background: #ef4444; font-weight: bold; font-size: 40px; margin-top: 20px; box-shadow: 0 4px 0 #991b1b; }
-      #jump-btn:active { box-shadow: 0 0 0 #991b1b; transform: translateY(4px); }
+      body { margin: 0; background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; }
+      /* Этот див будет контейнером игры */
+      #app { box-shadow: 0 0 20px rgba(0, 255, 0, 0.2); }
     </style>
   </head>
   <body>
-    <div id="login-screen" class="screen active">
-      <h1>Jackbox Clone</h1>
-      <input type="text" id="room-code" placeholder="CODE (4 letters)" maxlength="4" />
-      <input type="text" id="player-name" placeholder="YOUR NAME" maxlength="12" />
-      <button id="join-btn">JOIN GAME</button>
-      <p id="error-msg" style="color: #ff6b6b"></p>
-    </div>
-
-    <div id="game-screen" class="screen">
-      <h2 id="player-display">Player</h2>
-      <button id="jump-btn">JUMP!</button>
-    </div>
-
-    <script type="module" src="/src/controller.ts"></script>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

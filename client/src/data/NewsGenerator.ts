@@ -1,0 +1,217 @@
+
+import { GoogleGenAI } from "@google/genai";
+import { NewsType } from './NewsData';
+
+const ai = new GoogleGenAI({apiKey: import.meta.env.VITE_GEMINI_KEY});
+
+type NewsItem = {
+  text: string;
+  type: string;
+  strength: number;
+  duration: number;
+};
+
+interface NewsItemAnswer {
+  type: "GOOD" | "BAD" | "NEUTRAL";
+  strength: number;  // 1–15 (или как приходит)
+  duration: number;  // 5000–20000
+}
+
+interface GeminiPartContent {
+  text: string;  // JSON-строка, которую нужно распарсить
+  role: string;  // обычно "model"
+}
+
+interface GeminiContent {
+  parts: GeminiPartContent[];
+  role: string;
+}
+
+interface GeminiCandidate {
+  content: GeminiContent;
+  finishReason: string;
+  index: number;
+}
+
+interface GeminiUsageMetadata {
+  promptTokenCount: number;
+  candidatesTokenCount: number;
+  totalTokenCount: number;
+  promptTokensDetails: { modality: string; tokenCount: number }[];
+  thoughtsTokenCount: number;
+}
+
+interface GeminiResponse {
+  candidates: GeminiCandidate[];
+  usageMetadata: GeminiUsageMetadata;
+  modelVersion: string;
+  responseId: string;
+}
+
+
+export function parseNews(raw: string): { news: NewsItem[] } {
+  // 1. Находим все фрагменты вида:
+  // "text": "...",
+  // "type": "...",
+  // "strength": ...,
+  // "duration": ...
+  const regex = /"text":\s*"([^"]+)"[\s\S]*?"type":\s*"([^"]+)"[\s\S]*?"strength":\s*(\d+)[\s\S]*?"duration":\s*(\d+)/g;
+
+  const items: NewsItem[] = [];
+  let match;
+
+  while ((match = regex.exec(raw)) !== null) {
+    items.push({
+      text: match[1],
+      type: match[2],
+      strength: Number(match[3]),
+      duration: Number(match[4]),
+    });
+  }
+
+  return { news: items };
+}
+
+export class NewsGenerator {
+    // private chat;
+    // constructor() {
+    //     this.chat = ai.chats.create({
+    //     model: "gemini-2.5-flash",
+    //     history: [
+    //     {
+    //         role: "user",
+    //         parts: [{ text: "Hello" }],
+    //     },
+    //     ],
+    // });
+    // }
+    static async generateDailyNews(count: number = 10): Promise<NewsItem[]> {
+        // Промпт (Инструкция)
+        const prompt = `
+        You are a game content generator for a crypto trading simulator.
+
+        Generate ${count} funny, short, chaotic news headlines.
+
+        Output requirements:
+        - Return ONLY a valid JSON object.
+        - No code blocks, no markdown, no explanations.
+        - The top-level object MUST be: { "news": [...] }
+
+        Each element inside "news" must be an object with:
+        - "text": string (max 10 words, in a chaotic/funny style: WallStreetBets, Bloomberg satire, yellow press)
+        - "type": string ("GOOD" | "BAD" | "NEUTRAL")
+        - "strength": integer 1–15
+        - "duration": integer 5000–20000
+
+        Example styles (do NOT wrap in code blocks):
+        - The Trump administration believes the Kremlin has demonstrated its readiness for a peace agreement on Ukraine — CNN
+        - Skoro dogovornyachok - Eduard Bahtiyarov News
+        - Miners went on strike.
+
+        Add some news about people with names Artur, Edik, Matwei, with jokes about crypto and latest news about politics"
+        `;
+
+        try {
+            // 1. Отправляем запрос
+            const response = await ai.models.generateContentStream({
+                model: "gemini-2.5-flash",
+                contents: prompt,
+            });
+            const text: string[] = [];
+            for await (const chunk of response) {
+                text.push(chunk.text || '');
+            };
+            // 2. Парсим JSON
+            // Gemini обычно возвращает чистый JSON, если включен responseMimeType
+            const parsedData = parseNews(text.join(''))
+            // Проверка структуры (иногда модель может вернуть массив сразу, без ключа news)
+            const rawNews = parsedData.news || parsedData;
+
+            if (!Array.isArray(rawNews)) {
+                throw new Error("Invalid JSON structure");
+            }
+
+            // 3. Преобразуем в наш формат (добавляем минусы для плохих новостей)
+            const cleanNews: NewsItem[] = rawNews.map((item: any) => {
+                let finalStrength = item.strength;
+                if (item.type === 'BAD') finalStrength = -Math.abs(item.strength);
+                if (item.type === 'NEUTRAL') finalStrength = 0;
+
+                return {
+                    text: item.text,
+                    
+                    // --- ИСПРАВЛЕНИЕ ТУТ ---
+                    // Мы говорим TypeScript: "Мамой клянусь, это правильный тип"
+                    type: item.type as NewsType, 
+                    
+                    strength: finalStrength,
+                    duration: item.duration
+                };
+            });
+
+            return cleanNews;
+
+        } catch (error) {
+            console.error("Gemini Generation failed:", error);
+            return []; // Вернем пустой массив, игра подхватит старый пул
+        }
+    }
+
+    static async analyzePlayerNews(text: string): Promise<NewsItem> {
+        const prompt = `
+        Analyze this crypto news headline written by a player: "${text}".
+        
+        Determine its potential impact on the market.
+        Return a strictly valid JSON object (no markdown) with:
+        - "type": "GOOD" (positive), "BAD" (negative), or "NEUTRAL" (if not big impact to the world or crypto world).
+        - "strength": number (1 to 15). How shocking is it?
+        - "duration": number (5000 to 20000). How long will the effect last?
+        `;
+
+        try {
+
+            const response = await ai.models.generateContentStream({
+                model: "gemini-2.5-flash",
+                contents: prompt,
+            });
+            const textResp: string[] = [];
+            for await (const chunk of response) {
+                textResp.push(chunk.text || '');
+            };
+            // 2. Парсим JSON
+            // Gemini обычно возвращает чистый JSON, если включен responseMimeType
+            // const data = parseNews();
+            const news: NewsItemAnswer = JSON.parse(textResp[0]);
+            // candidates[0].content.parts[0].text
+            // Корректировка знака для игры
+            let finalStrength = news.strength;
+            if (news.type === 'BAD') finalStrength = -Math.abs(news.strength);
+            if (news.type === 'NEUTRAL') finalStrength = 0;
+
+            return {
+                    text: text,
+                    type: news.type,
+                    strength: finalStrength,
+                    duration: news.duration
+            };
+        } catch (error) {
+            console.error("Analysis failed:", error);
+            // Фоллбэк, если AI упал: считаем новость нейтральной
+            return { text: text, type: 'NEUTRAL', strength: 0, duration: 0 };
+        }
+    }
+    
+}
+
+function parseGeminiNews(raw: string): NewsItem | null {
+  // Убираем "data:" если есть
+  const jsonStr = raw.replace(/^data:\s*/, "");
+  const response: GeminiResponse = JSON.parse(jsonStr);
+
+  const partText = response.candidates[0]?.content.parts[0]?.text;
+  if (!partText) return null;
+
+  // Парсим внутренний JSON
+  const newsItem: NewsItem = JSON.parse(partText);
+  return newsItem;
+}
