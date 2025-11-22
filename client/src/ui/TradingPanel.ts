@@ -2,114 +2,98 @@ import Phaser from 'phaser';
 import { BasePanel } from './BasePanel';
 
 export class TradingPanel extends BasePanel {
-    private inputAmount = "100";
-    private inputText: Phaser.GameObjects.Text;
-    private onBuy: (amount: number) => void;
-    private onSell: () => void;
+    private onTrade: (percent: number, isLong: boolean) => void;
     
-    // Ссылки на контейнеры кнопок для управления их прозрачностью
+    private selectedPercent = 0.5; // По умолчанию 50%
+    private percentBtns: Phaser.GameObjects.Text[] = [];
+    
+    // Ссылки на кнопки для управления их активностью
     private btnBuyContainer: Phaser.GameObjects.Container;
     private btnSellContainer: Phaser.GameObjects.Container;
 
-    constructor(scene: Phaser.Scene, x: number, y: number, w: number, h: number, onBuy: (a: number)=>void, onSell: ()=>void) {
-        super(scene, x, y, w, h, 0x1a1a1a);
-        this.onBuy = onBuy;
-        this.onSell = onSell;
+    constructor(scene: Phaser.Scene, x: number, y: number, w: number, h: number, onTrade: (pct: number, long: boolean)=>void) {
+        super(scene, x, y, w, h, 0x111111);
+        this.onTrade = onTrade;
 
-        // ИСПРАВЛЕНИЕ: используем scene.add.text, затем this.add(...)
-        const label = scene.add.text(20, 20, 'ORDER AMOUNT ($):', { 
-            fontSize: '14px', color: '#aaa', fontFamily: 'monospace' 
-        });
-        this.add(label);
+        this.add(scene.add.text(20, 20, 'BET SIZE:', { fontSize: '14px', color: '#aaa', fontFamily: 'monospace' }));
 
-        // Поле ввода (Фон + Текст)
-        const inputBg = scene.add.rectangle(20, 50, 200, 40, 0x000000)
-            .setOrigin(0)
-            .setStrokeStyle(1, 0x666666);
+        // КНОПКИ ПРОЦЕНТОВ
+        this.createPercentBtn(20, 50, '25%', 0.25);
+        this.createPercentBtn(100, 50, '50%', 0.50);
+        this.createPercentBtn(180, 50, 'MAX', 1.00);
         
-        this.inputText = scene.add.text(30, 70, this.inputAmount, { 
-            fontSize: '24px', fontFamily: 'monospace', color: '#fff' 
-        }).setOrigin(0, 0.5); // Центрируем текст по вертикали в поле
+        this.highlightPercent(1); // 50% активно
 
-        this.add([inputBg, this.inputText]);
-
-        // Кнопка MAX
-        this.createSimpleBtn(250, 70, 50, 30, 'MAX', 0x444444, () => this.emit('max-clicked'));
-
-        // Кнопки BUY / SELL (Большие)
-        this.btnBuyContainer = this.createBigBtn(400, 70, 150, 60, 'BUY', 0x00aa00, () => {
-            this.onBuy(parseInt(this.inputAmount));
-        });
+        // КНОПКИ LONG / SHORT (Сохраняем их в переменные класса)
+        this.btnBuyContainer = this.createBigBtn(400, 50, 140, 60, 'UP (LONG)', 0x00aa00, () => this.onTrade(this.selectedPercent, true));
+        this.btnSellContainer = this.createBigBtn(560, 50, 140, 60, 'DOWN (SHORT)', 0xaa0000, () => this.onTrade(this.selectedPercent, false));
         
-        this.btnSellContainer = this.createBigBtn(600, 70, 150, 60, 'SELL', 0xaa0000, () => {
-            this.onSell();
-        });
-        this.btnSellContainer.setAlpha(0.5); // Сначала продавать нечего
-
-        // Слушаем клавиатуру
-        // Важно: удаляем старые слушатели, если сцена перезапускается, чтобы не дублировать ввод
-        scene.input.keyboard?.off('keydown');
-        // scene.input.keyboard?.on('keydown', (e: KeyboardEvent) => this.handleInput(e));
+        // Сразу выключаем кнопку закрытия
+        this.btnSellContainer.setAlpha(0.5);
     }
 
-    public setInput(val: string) {
-        this.inputAmount = val;
-        this.inputText.setText(val);
-    }
-
+    // --- ВОТ ЭТОГО МЕТОДА НЕ ХВАТАЛО ---
     public updateButtons(hasPosition: boolean) {
+        // Если мы в позиции (hasPosition = true):
+        // BUY (UP) становится прозрачным (неактивным)
+        // SELL (DOWN/CLOSE) становится ярким (активным)
         this.btnBuyContainer.setAlpha(hasPosition ? 0.5 : 1);
         this.btnSellContainer.setAlpha(hasPosition ? 1 : 0.5);
-    }
-
-    public handleInput(e: KeyboardEvent) {
-        // Убрали проверку if (!this.scene) - она не нужна, если управляем извне
         
-        if (/^[0-9]$/.test(e.key)) {
-            if (this.inputAmount === "0") this.inputAmount = e.key;
-            else this.inputAmount += e.key;
-        } else if (e.key === 'Backspace') {
-            this.inputAmount = this.inputAmount.slice(0, -1) || "0";
+        // Меняем текст второй кнопки в зависимости от состояния
+        const sellText = this.btnSellContainer.getAt(1) as Phaser.GameObjects.Text;
+        if (sellText) {
+            sellText.setText(hasPosition ? 'CLOSE' : 'DOWN (SHORT)');
         }
-        this.inputText.setText(this.inputAmount);
     }
 
-    // Хелпер для маленькой кнопки (MAX)
-    private createSimpleBtn(x: number, y: number, w: number, h: number, text: string, color: number, cb: () => void) {
-        // Создаем элементы через this.scene.add
-        const btn = this.scene.add.rectangle(0, 0, w, h, color).setInteractive({useHandCursor:true});
-        const lbl = this.scene.add.text(0, 0, text, { fontSize: '14px', fontFamily: 'monospace' }).setOrigin(0.5);
-        
-        // Создаем контейнер кнопки
-        const cont = this.scene.add.container(x, y, [btn, lbl]);
-        
-        // Добавляем контейнер кнопки в ОСНОВНУЮ панель
+    private createPercentBtn(x: number, y: number, text: string, value: number) {
+        const bg = this.scene.add.rectangle(0, 0, 70, 40, 0x222222).setInteractive({useHandCursor:true});
+        bg.setStrokeStyle(1, 0x666666);
+        const txt = this.scene.add.text(0, 0, text, { fontSize: '16px', color: '#fff', fontFamily: 'monospace' }).setOrigin(0.5);
+        const cont = this.scene.add.container(x + 35, y + 20, [bg, txt]);
         this.add(cont);
 
-        btn.on('pointerdown', cb);
+        bg.on('pointerdown', () => {
+            this.selectedPercent = value;
+            this.updateHighlights(text);
+        });
+        
+        txt.setData('val', value);
+        this.percentBtns.push(txt);
     }
 
-    // Хелпер для больших кнопок (BUY/SELL)
+    private updateHighlights(selectedText: string) {
+        this.percentBtns.forEach(btn => {
+            if (btn.text === selectedText) btn.setColor('#00ff00');
+            else btn.setColor('#ffffff');
+        });
+    }
+    
+    private highlightPercent(index: number) {
+        this.percentBtns.forEach((btn, i) => btn.setColor(i === index ? '#00ff00' : '#ffffff'));
+    }
+
     private createBigBtn(x: number, y: number, w: number, h: number, text: string, color: number, cb: () => void) {
         const btn = this.scene.add.rectangle(0, 0, w, h, color).setInteractive({useHandCursor:true});
+        btn.setStrokeStyle(2, 0x000000); 
+        
         const lbl = this.scene.add.text(0, 0, text, { 
-            fontSize: '24px', fontStyle: 'bold', fontFamily: 'monospace' 
+            fontSize: '18px', fontStyle: 'bold', fontFamily: 'monospace', color: '#000' 
         }).setOrigin(0.5);
         
         const cont = this.scene.add.container(x, y, [btn, lbl]);
         this.add(cont);
         
         btn.on('pointerdown', () => {
-            if (cont.alpha < 1) return; // Неактивна
-            
-            this.scene.tweens.add({ 
-                targets: cont, 
-                scale: 0.95, 
-                duration: 50, 
-                yoyo: true 
-            });
+            if (cont.alpha < 1) return; // Если прозрачная - не нажимается
+            this.scene.tweens.add({ targets: cont, scale: 0.95, duration: 50, yoyo: true });
             cb();
         });
+        
+        btn.on('pointerover', () => { if(cont.alpha === 1) btn.setAlpha(0.9); });
+        btn.on('pointerout', () => { if(cont.alpha === 1) btn.setAlpha(1); });
+
         return cont;
     }
 }

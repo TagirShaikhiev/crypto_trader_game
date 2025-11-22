@@ -51,8 +51,6 @@ export class MatrixEffect {
         this.chars.push('ZOV');
         this.chars.push('SVO');
         this.chars.push('БЭБ');
-        this.chars.push('ТУРБОСВИН');
-        this.chars.push('ТУРБИНЦЕЛН');
         // 4. Полуширинная Катакана (Классика из фильма)
         for (let i = 0xFF66; i <= 0xFF9D; i++) {
             this.chars.push(String.fromCharCode(i));

@@ -6,6 +6,8 @@ export class NewsEditorPanel extends BasePanel {
     private inputText: Phaser.GameObjects.Text;
     private currentText = "";
     private cursor: Phaser.GameObjects.Text;
+    private _currentSubmitCallback: (text: string) => void;
+    private titleText: Phaser.GameObjects.Text; // Сохраним ссылку на заголовок
     
     // Элементы загрузки
     private statusText: Phaser.GameObjects.Text;
@@ -20,7 +22,7 @@ export class NewsEditorPanel extends BasePanel {
         this.onSubmit = onSubmit;
         this.setVisible(false);
         this.setDepth(200);
-
+        this._currentSubmitCallback = onSubmit; // Дефолтный
         // Фон-затемнение
         this.add(scene.add.rectangle(-x, -y, 1280, 720, 0x000000, 0.8).setOrigin(0));
         
@@ -62,6 +64,14 @@ export class NewsEditorPanel extends BasePanel {
         this.cursor.setVisible(!isLoading);     // Скрываем курсор
     }
 
+    public setPrompt(text: string) {
+        this.titleText.setText(text);
+    }
+
+    public setOnSubmit(cb: (text: string) => void) {
+        this._currentSubmitCallback = cb;
+    }
+
     public open() {
         this.setVisible(true);
         this.currentText = "";
@@ -93,6 +103,7 @@ export class NewsEditorPanel extends BasePanel {
         if (this.currentText.trim().length < 3) return;
         this.setLoading(true); // Включаем анимацию загрузки
         this.onSubmit(this.currentText);
+        this._currentSubmitCallback(this.currentText);
     }
 
     private createButton(x: number, y: number, w: number, h: number, text: string, color: number, cb: () => void) {

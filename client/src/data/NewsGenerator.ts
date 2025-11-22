@@ -200,6 +200,46 @@ export class NewsGenerator {
             return { text: text, type: 'NEUTRAL', strength: 0, duration: 0 };
         }
     }
+    static async analyzeRoundStrategy(headlines: string[]): Promise<any[]> {
+        const prompt = `
+        You are a financial AI game engine. 
+        Analyze these 3 news headlines written by a player:
+        1. "${headlines[0]}"
+        2. "${headlines[1]}"
+        3. "${headlines[2]}"
+
+        For EACH headline, determine its impact on 3 separate markets: CRYPTO, STOCKS, BONDS.
+        Markets react differently. For example, inflation is bad for Stocks but might be good for Gold/Bonds. Crypto is volatile.
+
+        Return a JSON object with a key "analysis" containing an array of 3 objects.
+        Each object must have:
+        - "text": string (original headline)
+        - "impacts": { "CRYPTO": number (-15 to 15), "STOCKS": number (-10 to 10), "BONDS": number (-5 to 5) }
+        - "type": "GOOD" | "BAD" | "NEUTRAL" (general sentiment)
+        `;
+
+        try {
+            const response = await ai.models.generateContentStream({
+                model: "gemini-2.5-flash",
+                contents: prompt,
+            });
+            const textResp: string[] = [];
+            for await (const chunk of response) {
+                textResp.push(chunk.text || '');
+            };
+            const parsedData = parseNews(textResp.join(''))
+            // const data = JSON.parse(parsedData.text());
+            return parsedData.news || [];
+        } catch (error) {
+            console.error("Batch Analysis failed:", error);
+            // Fallback: возвращаем нули
+            return headlines.map(h => ({
+                text: h,
+                impacts: { CRYPTO: 0, STOCKS: 0, BONDS: 0 },
+                type: 'NEUTRAL'
+            }));
+        }
+    }
     
 }
 
