@@ -6,16 +6,26 @@ export class TradingPanel extends BasePanel {
     
     private selectedPercent = 0.5; // По умолчанию 50%
     private percentBtns: Phaser.GameObjects.Text[] = [];
-    
+    private inputAmount = "100";
+    private inputText: Phaser.GameObjects.Text;
     // Ссылки на кнопки для управления их активностью
     private btnBuyContainer: Phaser.GameObjects.Container;
     private btnSellContainer: Phaser.GameObjects.Container;
 
     constructor(scene: Phaser.Scene, x: number, y: number, w: number, h: number, onTrade: (pct: number, long: boolean)=>void) {
         super(scene, x, y, w, h, 0x111111);
+        const inputW = 250;
+        const inputBg = scene.add.rectangle(20, 45, inputW, 50, 0x000000)
+            .setOrigin(0)
+            .setStrokeStyle(2, 0x00ff00); // <-- Ярко-зеленая рамка (2px)
         this.onTrade = onTrade;
 
         this.add(scene.add.text(20, 20, 'BET SIZE:', { fontSize: '14px', color: '#aaa', fontFamily: 'monospace' }));
+
+        this.inputText = scene.add.text(35, 70, this.inputAmount, { 
+            fontSize: '28px', fontFamily: 'monospace', color: '#00ff00' 
+        }).setOrigin(0, 0.5);
+        this.add([inputBg, this.inputText]);
 
         // КНОПКИ ПРОЦЕНТОВ
         this.createPercentBtn(20, 50, '25%', 0.25);
@@ -95,5 +105,18 @@ export class TradingPanel extends BasePanel {
         btn.on('pointerout', () => { if(cont.alpha === 1) btn.setAlpha(1); });
 
         return cont;
+    }
+
+    public handleInput(e: KeyboardEvent) {
+        if (!this.scene) return;
+        
+        // Логика ввода цифр
+        if (/^[0-9]$/.test(e.key)) {
+            if (this.inputAmount === "0") this.inputAmount = e.key;
+            else this.inputAmount += e.key;
+        } else if (e.key === 'Backspace') {
+            this.inputAmount = this.inputAmount.slice(0, -1) || "0";
+        }
+        this.inputText.setText(this.inputAmount);
     }
 }

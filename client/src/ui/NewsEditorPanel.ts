@@ -13,6 +13,7 @@ export class NewsEditorPanel extends BasePanel {
     private statusText: Phaser.GameObjects.Text;
     private publishBtn: Phaser.GameObjects.Container;
     private isProcessing = false; // Блокировка ввода во время отправки
+    private isSubmitting = false; // <--- НОВЫЙ ФЛАГ
 
     // Обрати внимание: колбэк теперь принимает только текст (тип определит AI)
     private onSubmit: (text: string) => void;
@@ -30,7 +31,10 @@ export class NewsEditorPanel extends BasePanel {
         this.add(scene.add.rectangle(0, 0, w, h, 0x222222).setOrigin(0).setStrokeStyle(2, 0x444444));
 
         // Заголовок
-        this.add(scene.add.text(w/2, 30, 'NEWS EDITOR', { fontSize: '24px', fontStyle: 'bold', fontFamily: 'monospace' }).setOrigin(0.5));
+        this.titleText = scene.add.text(w/2, 30, 'NEWS EDITOR', { 
+            fontSize: '24px', fontStyle: 'bold', fontFamily: 'monospace' 
+        }).setOrigin(0.5);
+        this.add(this.titleText);
 
         // Поле ввода
         const inputBg = scene.add.rectangle(20, 80, w - 40, 100, 0x000000).setOrigin(0).setStrokeStyle(1, 0x666666);
@@ -75,7 +79,8 @@ export class NewsEditorPanel extends BasePanel {
     public open() {
         this.setVisible(true);
         this.currentText = "";
-        this.setLoading(false); // Сброс состояния
+        this.isSubmitting = false; // <--- Сбрасываем блокировку при открытии
+        this.setLoading(false); 
         this.updateText();
     }
 
@@ -100,10 +105,12 @@ export class NewsEditorPanel extends BasePanel {
     }
 
     private submit() {
-        if (this.currentText.trim().length < 3) return;
-        this.setLoading(true); // Включаем анимацию загрузки
+        if (this.isSubmitting || this.currentText.trim().length < 3) return;
+        
+        this.isSubmitting = true; // <--- БЛОКИРУЕМ
+        this.setLoading(true);
+        
         this.onSubmit(this.currentText);
-        this._currentSubmitCallback(this.currentText);
     }
 
     private createButton(x: number, y: number, w: number, h: number, text: string, color: number, cb: () => void) {

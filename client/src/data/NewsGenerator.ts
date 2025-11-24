@@ -6,13 +6,13 @@ const ai = new GoogleGenAI({apiKey: import.meta.env.VITE_GEMINI_KEY});
 
 type NewsItem = {
   text: string;
-  type: string;
+  type: NewsType;
   strength: number;
   duration: number;
 };
 
 interface NewsItemAnswer {
-  type: "GOOD" | "BAD" | "NEUTRAL";
+  type: NewsType;
   strength: number;  // 1–15 (или как приходит)
   duration: number;  // 5000–20000
 }
@@ -63,7 +63,7 @@ export function parseNews(raw: string): { news: NewsItem[] } {
   while ((match = regex.exec(raw)) !== null) {
     items.push({
       text: match[1],
-      type: match[2],
+      type: match[2] as NewsType,
       strength: Number(match[3]),
       duration: Number(match[4]),
     });
@@ -200,6 +200,7 @@ export class NewsGenerator {
             return { text: text, type: 'NEUTRAL', strength: 0, duration: 0 };
         }
     }
+
     static async analyzeRoundStrategy(headlines: string[]): Promise<any[]> {
         const prompt = `
         You are a financial AI game engine. 
@@ -237,6 +238,80 @@ export class NewsGenerator {
                 text: h,
                 impacts: { CRYPTO: 0, STOCKS: 0, BONDS: 0 },
                 type: 'NEUTRAL'
+            }));
+        }
+    }
+
+    // Метод анализа пачки новостей игрока
+    static async analyzeBatch(headlines: string[]): Promise<NewsItem[]> {
+        // Формируем список для промпта
+        const listStr = headlines.map((h, i) => `${i + 1}. "${h}"`).join("\n");
+
+        const prompt = `
+        You are a financial AI game engine.
+        Analyze these ${headlines.length} crypto news headlines written by a player:
+        ${listStr}
+
+        Output requirements:
+        - Return ONLY a valid JSON object.
+        - No code blocks, no markdown.
+        - The top-level object MUST be: { "results": [...] }
+        - The order of results MUST match the order of input headlines (1st result for 1st headline, etc.).
+
+        Each element inside "results" must be an object with:
+        - "type": string ("GOOD" | "BAD" | "NEUTRAL")
+        - "strength": integer 1–15
+        - "duration": integer 5000–20000
+        `;
+
+        try {
+            // 1. Отправляем запрос (используем твой рабочий синтаксис)
+            const response = await ai.models.generateContentStream({
+                model: "gemini-2.5-flash",
+                contents: prompt,
+            });
+
+            const text: string[] = [];
+            for await (const chunk of response) {
+                text.push(chunk.text || '');
+            };
+
+            // 2. Парсим JSON
+            const rawString = text.join('');
+            
+            // Очищаем от маркдауна на всякий случай (```json ... ```)
+            const cleanString = rawString.replace(/```json|```/g, '').trim();
+            const parsedData = JSON.parse(cleanString); // Или используй свою функцию parseNews(rawString), если она доступна
+
+            const rawResults = parsedData.results || [];
+
+            // 3. Собираем итоговый массив
+            // Используем map по входящим заголовкам (headlines), чтобы гарантировать порядок
+            return headlines.map((headline, index) => {
+                // Пытаемся найти результат по индексу, если AI вернул меньше - берем дефолт
+                const item = rawResults[index] || { type: 'NEUTRAL', strength: 0, duration: 5000 };
+
+                let finalStrength = item.strength;
+                if (item.type === 'BAD') finalStrength = -Math.abs(item.strength);
+                if (item.type === 'NEUTRAL') finalStrength = 0;
+
+                return {
+                    text: headline, // ВАЖНО: Возвращаем оригинальный текст игрока, а не галлюцинацию AI
+                    type: item.type as NewsType,
+                    strength: finalStrength,
+                    duration: item.duration
+                };
+            });
+
+        } catch (error) {
+            console.error("Batch Analysis failed:", error);
+            
+            // Фоллбэк: если AI сломался, возвращаем новости как нейтральные, чтобы игра не зависла
+            return headlines.map(h => ({
+                text: h,
+                type: 'NEUTRAL' as NewsType,
+                strength: 0,
+                duration: 5000
             }));
         }
     }

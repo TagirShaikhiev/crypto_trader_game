@@ -5,265 +5,349 @@ import { ChartPanel } from '../ui/ChartPanel';
 import { TradingPanel } from '../ui/TradingPanel';
 import { StatusPanel } from '../ui/StatusPanel';
 import { OverlayPanel } from '../ui/OverlayPanel';
-
-// Логика
+import { NewsEditorPanel } from '../ui/NewsEditorPanel';
 import { MarketSimulation } from '../logic/MarketSimulation';
-import { ReputationManager } from '../logic/ReputationManager';
+import { NewsGenerator } from '../data/NewsGenerator';
+import { NEWS_POOL, NewsItem, NewsType } from '../data/NewsData';
+
+interface TimelineEvent {
+    triggerTime: number;
+    newsItem: NewsItem;
+    isPlayer: boolean;
+}
+
+interface ActiveNewsEffect {
+    strength: number;
+    timeLeft: number;
+}
 
 export class MainGame extends Phaser.Scene {
-    // --- КОМПОНЕНТЫ UI ---
     private chartPanel!: ChartPanel;
     private statusPanel!: StatusPanel;
     private tradingPanel!: TradingPanel;
     private newsPanel!: NewsPanel;
     private overlayPanel!: OverlayPanel;
+    private newsEditor!: NewsEditorPanel;
 
-    // --- ЛОГИКА (МОДЕЛИ) ---
     private simulation!: MarketSimulation;
-    private reputationManager!: ReputationManager;
 
-    // --- СОСТОЯНИЕ ИГРЫ ---
     private isGameRunning = false;
+    private isEditorOpen = false;
+    private isAnalyzing = false;
+
     private cash = 10000;
     private heat = 0;
-    
-    // Таймер раунда (30 секунд)
-    private readonly ROUND_DURATION = 30000; 
-    private readonly TICK_RATE = 100; // Обновление 10 раз в сек
-    private roundTimeLeft = 0;
+    private dayNumber = 1;
 
-    // Трейдинг (Позиция)
-    private positionSize = 0;   // Кол-во купленных лотов
-    private entryPrice = 0;     // Цена входа
-    private isLongPosition = true; // true = играем на повышение, false = шорт
+    private positionSize = 0;
+    private entryPrice = 0;
+    private isLongPosition = true;
 
-    // Перенос данных между днями
+    private readonly ROUND_DURATION = 30000;
+    private readonly TICK_RATE = 100;
+    private timeElapsed = 0;
+
+    private timeline: TimelineEvent[] = [];
+    private activeEffects: ActiveNewsEffect[] = [];
+    private draftHeadlines: string[] = [];
+    private newsStep = 0;
+
     private lastClosePrice = 100;
     private prevHistory: number[] = [];
-    private dayNumber = 1;
+    private playerNewsDeck: NewsItem[] = [];
 
     constructor() {
         super('MainGame');
     }
 
-    // 1. ИНИЦИАЛИЗАЦИЯ
     init(data: any) {
         this.cash = data.cash || 10000;
         this.heat = data.heat || 0;
         this.dayNumber = data.dayNumber || 1;
-        
         this.lastClosePrice = data.lastPrice || 100;
         this.prevHistory = data.history || [];
 
-        // Сброс
         this.isGameRunning = false;
+        this.isEditorOpen = false;
+        this.isAnalyzing = false;
         this.positionSize = 0;
         this.entryPrice = 0;
-        this.roundTimeLeft = this.ROUND_DURATION;
+        this.timeElapsed = 0;
+        this.timeline = [];
+        this.activeEffects = [];
+        this.draftHeadlines = [];
 
-        // Создаем логические модули
         this.simulation = new MarketSimulation(this.lastClosePrice, this.prevHistory);
-        this.reputationManager = new ReputationManager();
     }
 
     create() {
         AudioManager.playGame(this);
         const { width, height } = this.scale;
 
-        // --- 1. ПАНЕЛЬ НОВОСТЕЙ (Слева) ---
-        this.newsPanel = new NewsPanel(this, 0, 0, 280, height, () => {
-            this.publishDraft();
+        this.newsPanel = new NewsPanel(this, 0, 0, 280, height, (index) => {
+            this.activatePlayerNews(index);
         });
-        // Показываем первую заготовленную новость
-        this.updateDraftUI();
+        
+        this.chartPanel = new ChartPanel(this, 280, 0, 720, 550, this.simulation);
 
-        // --- 2. ГРАФИК (Центр Верх) ---
-        this.chartPanel = new ChartPanel(
-            this, 280, 0, 720, 550, 
-            this.simulation // Передаем модель
-        );
-
-        // --- 3. ТОРГОВЛЯ (Центр Низ) ---
         this.tradingPanel = new TradingPanel(this, 280, 550, 720, 170, 
             (percent, isLong) => this.handleTradeEntry(percent, isLong)
         );
         
-        // --- 4. СТАТУС (Справа) ---
         this.statusPanel = new StatusPanel(this, 1000, 0, 280, height);
-
-        // --- 5. ОВЕРЛЕЙ (Модальные окна) ---
         this.overlayPanel = new OverlayPanel(this, 280, 0, 720, 720);
 
-        // --- 6. ГЛАВНЫЙ ЦИКЛ ---
+        this.newsEditor = new NewsEditorPanel(this, 430, 210, 420, 300, (text) => {
+            this.handleDraftSubmit(text);
+        });
+
         this.time.addEvent({
             delay: this.TICK_RATE,
             callback: () => this.gameLoop(this.TICK_RATE),
             loop: true
         });
 
-        // Старт дня
-        this.startDay();
+        this.input.keyboard?.off('keydown');
+        this.input.keyboard?.on('keydown', (event: KeyboardEvent) => {
+            if (this.isEditorOpen) {
+                this.newsEditor.handleInput(event);
+                return;
+            }
+            this.tradingPanel.handleInput(event);
+        });
+
+        this.startPlanningPhase();
     }
 
-    // ========================================================
-    // ГЛАВНЫЙ ИГРОВОЙ ЦИКЛ
-    // ========================================================
+    private startPlanningPhase() {
+        this.isGameRunning = false;
+        this.draftHeadlines = [];
+        this.newsStep = 1;
+
+        this.overlayPanel.show(
+            `DAY ${this.dayNumber}`, 
+            'Plan your strategy. Write 3 headlines.', 
+            'START PLANNING', 
+            () => {
+                this.openEditorForStep();
+            }
+        );
+    }
+
+    
+
+    private openEditorForStep() {
+        this.isEditorOpen = true;
+        this.newsEditor.open();
+    }
+
+    private handleDraftSubmit(text: string) {
+        this.newsEditor.hide();
+        this.isEditorOpen = false;
+        this.draftHeadlines.push(text);
+
+        if (this.newsStep < 3) {
+            this.newsStep++;
+            this.time.delayedCall(300, () => this.openEditorForStep());
+        } else {
+            this.startAnalysisPhase();
+        }
+    }
+
+    private async startAnalysisPhase() {
+        if (this.isAnalyzing) return;
+        this.isAnalyzing = true;
+
+        this.overlayPanel.show('AI ANALYZING', 'Evaluating your headlines...', 'PLEASE WAIT', () => {});
+
+        console.log("Sending to AI:", this.draftHeadlines); // <-- ЛОГ
+
+        // 1. Запрос
+        const playerNewsItems = await NewsGenerator.analyzeBatch(this.draftHeadlines);
+        
+        console.log("AI Response:", playerNewsItems); // <-- ЛОГ
+
+        // 2. Сохраняем в "Руку" игрока
+        this.playerNewsDeck = playerNewsItems;
+
+        // 3. Добавляем РАНДОМНЫЕ события (только шум рынка)
+        this.injectRandomEvents();
+        this.timeline.sort((a, b) => a.triggerTime - b.triggerTime);
+
+        this.isAnalyzing = false;
+        this.overlayPanel.show('MARKET OPEN', 'News loaded into terminal.', 'START TRADING', () => {
+            this.startTradingPhase();
+        });
+    }
+    
+
+    private injectRandomEvents() {
+        const count = Phaser.Math.Between(3, 5);
+        
+        for (let i = 0; i < count; i++) {
+            const time = Phaser.Math.Between(2000, 28000);
+            const rand = Math.random();
+            let type: 'GOOD' | 'BAD' | 'NEUTRAL' = 'NEUTRAL';
+            
+            if (rand < 0.3) type = 'BAD'; else if (rand < 0.6) type = 'GOOD';
+            
+            const pool = NEWS_POOL[type];
+            const item = pool[Phaser.Math.Between(0, pool.length - 1)];
+
+            this.timeline.push({
+                triggerTime: time,
+                newsItem: { ...item, type: type, strength: item.strength },
+                isPlayer: false
+            });
+        }
+    }
+
+    private startTradingPhase() {
+        this.isGameRunning = true;
+        this.timeElapsed = 0;
+        // this.newsPanel.setStatus("MARKET OPEN"); // Если метода нет, удали строку или добавь в NewsPanel
+        
+        // ВАЖНО: Передаем новости в панель, чтобы создать кнопки
+        this.newsPanel.setupPlayerNewsButtons(this.playerNewsDeck);
+    }
+
+    private activatePlayerNews(index: number) {
+        const item = this.playerNewsDeck[index];
+        if (!item) return;
+
+        // 1. Публикуем в лог
+        this.newsPanel.logNews(item.text, item.type);
+
+        // 2. Маркер
+        if (item.type === 'GOOD') this.simulation.addMarker('NEWS_GOOD');
+        if (item.type === 'BAD') this.simulation.addMarker('NEWS_BAD');
+
+        // 3. Влияние на цену
+        if (item.strength !== 0) {
+            // Усиливаем эффект, так как это ручное управление
+            const manualStrength = item.strength * 1.5; 
+            this.simulation.manipulate(manualStrength);
+            
+            this.activeEffects.push({
+                strength: manualStrength / 2,
+                timeLeft: item.duration
+            });
+        }
+
+        // 4. Heat
+        this.changeHeat(5);
+    }
+
     private gameLoop(delta: number) {
         if (!this.isGameRunning) return;
 
-        this.roundTimeLeft -= delta;
+        this.timeElapsed += delta;
 
-        // 1. Обновляем симуляцию рынка
-        this.simulation.tick(delta, 0); // 0 - внешнее влияние пока только от кнопок
+        const eventsToFire = this.timeline.filter(e => e.triggerTime <= this.timeElapsed);
+        
+        eventsToFire.forEach(e => {
+            this.timeline = this.timeline.filter(x => x !== e);
+            this.fireEvent(e);
+        });
 
-        // 2. Обновляем визуализацию графика
+        let externalInfluence = 0;
+        this.activeEffects.forEach(eff => externalInfluence += eff.strength);
+        
+        this.activeEffects = this.activeEffects.filter(eff => {
+            eff.timeLeft -= delta;
+            return eff.timeLeft > 0;
+        });
+
+        this.simulation.tick(delta, externalInfluence);
         this.chartPanel.updateView();
 
-        // 3. Расчет прибыли (PnL) в реальном времени
-        let pnl = 0;
-        if (this.positionSize > 0) {
-            const currentVal = this.positionSize * this.simulation.currentPrice;
-            const investVal = this.positionSize * this.entryPrice;
-            
-            // Если Long: (Текущая - Вход)
-            // Если Short: (Вход - Текущая) -> инвертируем разницу
-            pnl = this.isLongPosition ? (currentVal - investVal) : (investVal - currentVal);
-        }
+        this.updatePnL();
 
-        // 4. Обновляем правую панель
-        this.statusPanel.updateStats(this.cash, pnl, this.heat);
-
-        // 5. Проверка конца раунда
-        if (this.roundTimeLeft <= 0) {
+        if (this.timeElapsed >= this.ROUND_DURATION) {
             this.finishDay();
         }
     }
 
-    // ========================================================
-    // МЕХАНИКА "RHYTHM NEWS" (Тайминг и Репутация)
-    // ========================================================
-    private publishDraft() {
-        if (!this.isGameRunning) return;
+    private fireEvent(e: TimelineEvent) {
+        this.newsPanel.logNews(e.newsItem.text, e.newsItem.type);
 
-        // Получаем текущий тренд из симуляции (нам нужно приватное свойство trend)
-        // Для чистоты кода лучше добавить геттер в MarketSimulation: getTrend()
-        // Но пока возьмем через any или добавим геттер.
-        // Предположим, что в MarketSimulation есть метод public getTrend(): number
-        const currentTrend = (this.simulation as any).trend || 0; 
+        if (e.newsItem.type === 'GOOD') this.simulation.addMarker('NEWS_GOOD');
+        if (e.newsItem.type === 'BAD') this.simulation.addMarker('NEWS_BAD');
 
-        // Менеджер репутации проверяет тайминг
-        const result = this.reputationManager.attemptPublish(currentTrend);
+        if (e.newsItem.strength !== 0) {
+            this.simulation.manipulate(e.newsItem.strength);
+            
+            this.activeEffects.push({
+                strength: e.newsItem.strength / 2,
+                timeLeft: e.newsItem.duration
+            });
+        }
 
-        // Применяем влияние на рынок
-        this.simulation.manipulate(result.impact);
-        
-        // Логгируем новость
-        // Текст новости берем из той, что была (мы её уже сменили в менеджере, 
-        // поэтому в идеале менеджер должен возвращать старую новость в result. 
-        // Для простоты покажем просто эффект в логе).
-        const typeStr = result.impact > 0 ? 'GOOD' : (result.impact < 0 ? 'BAD' : 'NEUTRAL');
-        this.newsPanel.logNews("MARKET REACTION:", typeStr);
-
-        // Визуальный маркер на графике
-        if (typeStr === 'GOOD') this.simulation.addMarker('NEWS_GOOD');
-        if (typeStr === 'BAD') this.simulation.addMarker('NEWS_BAD');
-
-        // Всплывающий текст (Feedback)
-        this.showFloatingText(result.message, result.success ? 0x00ff00 : 0xff0000);
-
-        // Обновляем UI следующей картой
-        this.updateDraftUI();
-        
-        // Повышаем Heat за манипуляцию
-        this.changeHeat(5);
+        if (e.isPlayer) {
+            this.changeHeat(5);
+        }
     }
 
-    private updateDraftUI() {
-        const nextNews = this.reputationManager.currentDraft;
-        this.newsPanel.setDraft(nextNews.text, nextNews.type);
-    }
-
-    // ========================================================
-    // ТОРГОВЛЯ
-    // ========================================================
     private handleTradeEntry(percent: number, isLong: boolean) {
         if (!this.isGameRunning) return;
 
-        // Если мы УЖЕ в сделке -> это сигнал к ЗАКРЫТИЮ
         if (this.positionSize > 0) {
             this.closePosition();
             return;
         }
 
-        // ОТКРЫТИЕ СДЕЛКИ
-        const amountToInvest = this.cash * percent;
-        if (amountToInvest < 10) return; // Слишком мало денег
+        const amount = this.cash * percent;
+        if (amount < 10) return;
 
-        this.cash -= amountToInvest;
+        this.cash -= amount;
         this.entryPrice = this.simulation.currentPrice;
-        this.positionSize = amountToInvest / this.entryPrice;
+        this.positionSize = amount / this.entryPrice;
         this.isLongPosition = isLong;
 
-        // Ставим маркер
-        this.simulation.addMarker(isLong ? 'BUY' : 'SELL'); // SELL тут как шорт-вход
-
-        // Обновляем кнопки (теперь они должны стать "CLOSE")
-        this.tradingPanel.updateButtons(true); 
+        this.simulation.addMarker(isLong ? 'BUY' : 'SELL'); 
+        this.tradingPanel.updateButtons(true);
     }
 
     private closePosition() {
         if (this.positionSize <= 0) return;
 
-        // Считаем выход
         const currentVal = this.positionSize * this.simulation.currentPrice;
         const investVal = this.positionSize * this.entryPrice;
         
-        let pnl = 0;
+        let profit = 0;
         if (this.isLongPosition) {
-            pnl = currentVal - investVal;
-            this.cash += currentVal; // Возвращаем тело + профит
+            profit = currentVal - investVal;
+            this.cash += (investVal + profit);
         } else {
-            // Short: мы заработали, если цена упала
-            pnl = investVal - currentVal;
-            this.cash += (investVal + pnl); // Возвращаем тело + профит (шорт математика упрощена)
+            profit = investVal - currentVal;
+            this.cash += (investVal + profit); 
         }
 
         this.positionSize = 0;
         this.entryPrice = 0;
-
-        // Ставим маркер выхода
-        // Если был Long, выходим продажей (SELL). Если Short, выходим откупом (BUY).
+        
         this.simulation.addMarker(this.isLongPosition ? 'SELL' : 'BUY');
-
         this.tradingPanel.updateButtons(false);
     }
 
-    // ========================================================
-    // СИСТЕМНЫЕ
-    // ========================================================
-    private startDay() {
-        this.isGameRunning = false;
-        this.overlayPanel.show(
-            `DAY ${this.dayNumber}`, 
-            'Market Opening...', 
-            'START SESSION', 
-            () => {
-                this.isGameRunning = true;
-            }
-        );
+    private updatePnL() {
+        let pnl = 0;
+        if (this.positionSize > 0) {
+            const currentVal = this.positionSize * this.simulation.currentPrice;
+            const investVal = this.positionSize * this.entryPrice;
+            pnl = this.isLongPosition ? (currentVal - investVal) : (investVal - currentVal);
+        }
+        this.statusPanel.updateStats(this.cash, pnl, this.heat);
     }
 
     private finishDay() {
         this.isGameRunning = false;
-        
-        // Автоматически закрываем позицию в конце дня, если есть
         if (this.positionSize > 0) this.closePosition();
 
-        // Берем историю для следующего дня
         const historyToPass = this.simulation.priceHistory;
 
         this.overlayPanel.show(
-            'SESSION CLOSED', 
+            'MARKET CLOSED', 
             `Balance: $${this.cash.toFixed(0)}`, 
             'NEXT DAY', 
             () => {
@@ -280,20 +364,5 @@ export class MainGame extends Phaser.Scene {
 
     private changeHeat(val: number) {
         this.heat = Phaser.Math.Clamp(this.heat + val, 0, 100);
-    }
-
-    private showFloatingText(msg: string, color: number) {
-        const txt = this.add.text(this.scale.width / 2, this.scale.height / 2, msg, {
-            fontSize: '48px', color: '#fff', fontStyle: 'bold', stroke: '#000', strokeThickness: 6
-        }).setOrigin(0.5).setDepth(200);
-        txt.setTint(color);
-
-        this.tweens.add({
-            targets: txt,
-            y: txt.y - 100,
-            alpha: 0,
-            duration: 1500,
-            onComplete: () => txt.destroy()
-        });
     }
 }

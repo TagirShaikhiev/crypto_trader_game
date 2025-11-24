@@ -1,10 +1,9 @@
 import Phaser from 'phaser';
 import { BasePanel } from './BasePanel';
-import { MarketSimulation, MarkerType } from '../logic/MarketSimulation'; // Импорт логики
+import { MarketSimulation, MarkerType } from '../logic/MarketSimulation';
 
 export class ChartPanel extends BasePanel {
-    private simulation: MarketSimulation; // Ссылка на мозг
-    
+    private simulation: MarketSimulation;
     private graphics: Phaser.GameObjects.Graphics;
     private scanlinesGraphics: Phaser.GameObjects.Graphics;
     private priceText: Phaser.GameObjects.Text;
@@ -12,14 +11,11 @@ export class ChartPanel extends BasePanel {
     private lineColor = 0x00ff00; 
 
     constructor(
-        scene: Phaser.Scene, 
-        x: number, y: number, 
-        width: number, height: number, 
-        simulation: MarketSimulation // <-- Принимаем готовую симуляцию
+        scene: Phaser.Scene, x: number, y: number, width: number, height: number, 
+        simulation: MarketSimulation
     ) {
         super(scene, x, y, width, height, 0x0a0a0a);
-        
-        this.simulation = simulation; // Запоминаем ссылку
+        this.simulation = simulation;
 
         this.graphics = scene.add.graphics();
         this.add(this.graphics);
@@ -35,20 +31,15 @@ export class ChartPanel extends BasePanel {
         this.add(this.priceText);
     }
 
-    // Метод теперь называется просто updateView(), так как он не тикает время
     public updateView() {
         this.draw();
         this.updateUI();
     }
 
-    // --- ОТРИСОВКА (Берет данные из this.simulation) ---
     private draw() {
         this.graphics.clear();
-        
-        // БЕРЕМ ДАННЫЕ ИЗ СИМУЛЯЦИИ
         const history = this.simulation.priceHistory;
         const markers = this.simulation.markers;
-        const currentPrice = this.simulation.currentPrice;
         const maxPoints = this.simulation.maxPoints;
 
         if (history.length < 2) return;
@@ -57,11 +48,10 @@ export class ChartPanel extends BasePanel {
         const h = this.height;
         const padding = h * 0.2;
 
-        // 1. Масштабирование Y
+        // 1. Масштабирование (С учетом всей истории раунда)
         let min = Math.min(...history);
         let max = Math.max(...history);
-        min = Math.min(min, currentPrice);
-        max = Math.max(max, currentPrice);
+        // Не учитываем currentPrice отдельно, так как она уже в истории
         if (min === max) { min -= 0.5; max += 0.5; }
 
         const spread = max - min;
@@ -71,26 +61,25 @@ export class ChartPanel extends BasePanel {
         const scaleY = (h - padding * 2) / visualRange;
         const getY = (price: number) => h - padding - (price - drawMin) * scaleY;
 
-        const stepX = w / maxPoints;
+        // 2. Шаг по X фиксирован: Ширина / (Макс точек за раунд)
+        const stepX = w / maxPoints; 
 
-        // 2. Рисуем Линию
+        // Рисуем линию
         this.graphics.lineStyle(4, this.lineColor, 1);
         this.graphics.beginPath();
 
-        const startIndex = Math.max(0, history.length - maxPoints);
-
-        for (let i = startIndex; i < history.length; i++) {
-            const x = (i - startIndex) * stepX;
+        // Рисуем ВСЮ историю от 0 до текущего момента
+        for (let i = 0; i < history.length; i++) {
+            const x = i * stepX;
             const y = getY(history[i]);
-            if (i === startIndex) this.graphics.moveTo(x, y);
+            if (i === 0) this.graphics.moveTo(x, y);
             else this.graphics.lineTo(x, y);
         }
         this.graphics.strokePath();
 
-        // 3. Рисуем Маркеры
+        // Рисуем маркеры
         markers.forEach(m => {
-             if (m.index < startIndex) return;
-             const mx = (m.index - startIndex) * stepX;
+             const mx = m.index * stepX;
              const my = getY(m.price);
              
              let color = 0xffffff;
@@ -108,12 +97,14 @@ export class ChartPanel extends BasePanel {
              this.graphics.strokePath();
         });
 
-        const curY = getY(currentPrice);
-        this.drawDashedLine(0, curY, w, curY);
-        
-        const lastX = (history.length - 1 - startIndex) * stepX;
+        // Фонарик на конце
+        const lastX = (history.length - 1) * stepX;
+        const curY = getY(history[history.length - 1]);
         this.graphics.fillStyle(0xffffff);
         this.graphics.fillRect(lastX - 3, curY - 3, 6, 6);
+        
+        // Пунктир цены
+        this.drawDashedLine(0, curY, w, curY);
     }
 
     private drawDashedLine(x1: number, y1: number, x2: number, y2: number) {
@@ -139,11 +130,9 @@ export class ChartPanel extends BasePanel {
         this.scanlinesGraphics.strokePath();
     }
 
-    public manipulate(impact: number) { if(!this.isFinished) this.trend += impact; }
     private updateUI() {
         const current = this.simulation.currentPrice;
         this.priceText.setText(`$${current.toFixed(2)}`);
-        
         const startPrice = this.simulation.priceHistory[0] || current;
         const col = current >= startPrice ? '#00ff00' : '#ff0000';
         this.priceText.setColor(col);
