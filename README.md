@@ -315,11 +315,16 @@ BLANK: "JP Morgan тайно купил 10% всех Bitcoin"
 ## 🚀 Запуск
 
 ```bash
+
+# Перейти в текущий клиент
+cd ./client
+
 # Установка зависимостей
 npm install
 
 # Запуск dev-сервера
 npm run dev
+
 ```
 
 ## 📝 Roadmap
