@@ -49,7 +49,21 @@ export class MainMenu extends Phaser.Scene {
         }).setOrigin(0.5);
 
         startBtn.on('pointerdown', () => {
-            this.scene.start('MainGame');
+            this.tweens.add({
+                targets: [startBtn, btnText],
+                scale: 0.95,
+                duration: 100,
+                yoyo: true,
+                onComplete: () => {
+                    // --- ИСПРАВЛЕНИЕ ТУТ ---
+                    // Было: this.scene.start('MainGame');
+                    // Стало: идем в Брифинг (начало дня)
+                    this.scene.start('BriefingScene', { 
+                        dayNumber: 1, 
+                        cash: 10000 
+                    });
+                }
+            });
         });
     }
 
