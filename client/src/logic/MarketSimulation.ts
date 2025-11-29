@@ -14,23 +14,23 @@ export class MarketSimulation {
     public priceHistory: number[] = [];
     public markers: PriceMarker[] = [];
     
-    // Настройки симуляции
     public readonly maxPoints = 300; 
-    private readonly POINT_DURATION = 100; // мс на точку
+    private readonly POINT_DURATION = 100;
 
-    // Внутреннее состояние
     private pointTimer = 0;
     private totalTime = 0;
-    private trend = 0;
-    private targetTrend = 0;
-    private volatility = 1.5;
+    
+    // --- ПАРАМЕТРЫ РЫНКА (Независимые от игрока) ---
+    private globalSentiment = 0; // -1 (Медвежий) ... 1 (Бычий). Меняется само.
+    private volatility = 1.0;    // 0.5 (Спокойный) ... 3.0 (Шторм).
+    
+    // Тренд от новостей (Влияние игрока и AI)
+    private newsTrend = 0; 
 
-    // Фазы волн (для красоты)
+    // Фазы волн
     private phase1 = Math.random() * 100;
     private phase2 = Math.random() * 100;
-
-    private trendMap: { time: number, value: number }[] = [];
-    private currentScenarioIndex = 0;
+    private sentimentPhase = Math.random() * 100; // Для плавного изменения настроения рынка
 
     constructor(startPrice: number = 100, previousHistory: number[] = []) {
         this.currentPrice = startPrice;
@@ -40,69 +40,54 @@ export class MarketSimulation {
         } else {
             this.generateWavePrehistory(50, startPrice);
         }
-        this.generateScenario();
-        // Добавляем стартовую точку
+        
         this.priceHistory.push(this.currentPrice);
     }
 
-    private generateScenario() {
-        this.trendMap = [
-            { time: 0, value: 0 },           // 0-5 сек: Тишина
-            { time: 5000, value: 0.5 },      // 5-12 сек: Легкий рост (разминка)
-            { time: 12000, value: 4.0 },     // 12-20 сек: МОЩНЫЙ ПАМП (Тут надо кидать новость!)
-            { time: 20000, value: -1.5 },    // 20-30 сек: Откат
-        ];
-    }
-
-    // --- ГЛАВНЫЙ РАСЧЕТ (Вызывать из GameLoop) ---
     public tick(delta: number, externalInfluence: number = 0) {
-        this.totalTime += delta;
-
-        // 1. Обновляем базовый тренд по сценарию
-        if (this.currentScenarioIndex < this.trendMap.length - 1) {
-            const nextEvent = this.trendMap[this.currentScenarioIndex + 1];
-            if (this.totalTime >= nextEvent.time) {
-                this.currentScenarioIndex++;
-                // Плавно меняем targetTrend
-                this.targetTrend = nextEvent.value; 
-            }
-        }
-
-        // 2. Считаем реальный тренд (Сценарий + Новости Игрока)
-        // ВАЖНО: externalInfluence теперь умножается на Репутацию (считаем в MainGame)
-        const combinedTrend = this.trend + externalInfluence;
         this.pointTimer += delta;
         this.totalTime += delta;
 
-        // 1. МАТЕМАТИКА (Здесь ты будешь править баланс в будущем)
+        // 1. ИЗМЕНЕНИЕ ГЛОБАЛЬНОГО НАСТРОЕНИЯ (Самостоятельная жизнь рынка)
+        // Очень медленная волна (период ~2 минуты)
+        this.globalSentiment = Math.sin((this.totalTime * 0.0001) + this.sentimentPhase) * 0.5;
+
+        // 2. ВОЛНЫ
         const wave1 = Math.sin((this.totalTime * 0.0005) + this.phase1) * 0.001; 
         const wave2 = Math.sin((this.totalTime * 0.002) + this.phase2) * 0.0005;
-        const noise = (Math.random() - 0.5) * 0.0005;
+        
+        // Случайный шум зависит от волатильности
+        const noise = (Math.random() - 0.5) * (0.001 * this.volatility);
 
-        const totalTrend = (this.trend + externalInfluence) / 40000; 
-        const multiplier = 1 + totalTrend + wave1 + wave2 + noise;
+        // 3. СУММАРНЫЙ ВЕКТОР
+        // (Глобальное настроение) + (Новости игрока/AI)
+        const combinedTrend = this.globalSentiment + (this.newsTrend + externalInfluence);
+        
+        // Делитель 30000 - чем больше, тем медленнее движение
+        const trendFactor = combinedTrend / 30000; 
+
+        // Итоговый множитель цены
+        const multiplier = 1 + trendFactor + wave1 + wave2 + noise;
 
         let newPrice = this.currentPrice * multiplier;
         if (newPrice < 0.01) newPrice = 0.01;
         this.currentPrice = newPrice;
 
-        // 2. УПРАВЛЕНИЕ ИСТОРИЕЙ
+        // 4. Управление историей (Массив точек)
         if (this.pointTimer >= this.POINT_DURATION) {
             this.finalizePoint();
             this.pointTimer = 0;
         } else {
-            // Просто обновляем хвост
             if (this.priceHistory.length > 0) {
                 this.priceHistory[this.priceHistory.length - 1] = this.currentPrice;
             }
         }
 
-        // Затухание тренда
-        this.trend = Phaser.Math.Linear(this.trend, this.targetTrend, 0.01);
+        // Затухание влияния новостей (возврат к глобальному настроению)
+        this.newsTrend = Phaser.Math.Linear(this.newsTrend, 0, 0.01);
     }
 
     private finalizePoint() {
-        // Сдвигаем массив, если переполнен
         if (this.priceHistory.length >= this.maxPoints) {
             this.priceHistory.shift();
             this.markers = this.markers
@@ -110,9 +95,13 @@ export class MarketSimulation {
                 .filter(m => m.index >= 0);
         }
         this.priceHistory.push(this.currentPrice);
+        
+        // Иногда меняем волатильность (рынок то успокаивается, то нервничает)
+        if (Math.random() < 0.05) {
+            this.volatility = Phaser.Math.Clamp(this.volatility + (Math.random() - 0.5), 0.5, 3.0);
+        }
     }
 
-    // --- API УПРАВЛЕНИЯ ---
     public addMarker(type: MarkerType) {
         this.markers.push({
             price: this.currentPrice,
@@ -121,22 +110,18 @@ export class MarketSimulation {
         });
     }
 
+    // Игрок влияет только на newsTrend
     public manipulate(impact: number) {
-        this.trend += impact;
+        this.newsTrend += impact;
+        // Резкая новость повышает волатильность
+        this.volatility += Math.abs(impact) * 0.1;
     }
 
     private generateWavePrehistory(count: number, targetPrice: number) {
         this.priceHistory = [];
         for (let i = 0; i < count; i++) {
-            const wave = Math.sin(i * 0.1) * (targetPrice * 0.005);
-            this.priceHistory.push(targetPrice + wave);
+            this.priceHistory.push(targetPrice);
         }
         this.currentPrice = targetPrice;
-    }
-
-    public getCurrentMarketDirection(): 'BULL' | 'BEAR' | 'FLAT' {
-        if (this.trend > 0.5) return 'BULL';
-        if (this.trend < -0.5) return 'BEAR';
-        return 'FLAT';
     }
 }

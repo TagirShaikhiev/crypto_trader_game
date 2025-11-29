@@ -7,6 +7,7 @@ export class ChartPanel extends BasePanel {
     private graphics: Phaser.GameObjects.Graphics;
     private scanlinesGraphics: Phaser.GameObjects.Graphics;
     private priceText: Phaser.GameObjects.Text;
+    public showPrediction = false; // Флаг
     
     private lineColor = 0x00ff00; 
 
@@ -105,6 +106,9 @@ export class ChartPanel extends BasePanel {
         
         // Пунктир цены
         this.drawDashedLine(0, curY, w, curY);
+        if (this.showPrediction) {
+            this.drawPrediction();
+        }
     }
 
     private drawDashedLine(x1: number, y1: number, x2: number, y2: number) {
@@ -130,6 +134,18 @@ export class ChartPanel extends BasePanel {
         this.scanlinesGraphics.strokePath();
     }
 
+    private drawPrediction() {
+        // Мы знаем targetTrend из симуляции (если передадим его сюда)
+        // Но ChartPanel "глупая", она не знает будущего.
+        // Поэтому "Инсайд" проще реализовать, если Simulation будет отдавать "будущие точки".
+        
+        // ХАК ДЛЯ ВИЗУАЛА:
+        // Просто рисуем линию от текущей цены в сторону текущего тренда
+        // simulation.trend мы не видим напрямую, но можем передать.
+        
+        // Давай сделаем проще: MainGame будет говорить чарту "нарисуй стрелку"
+    }
+    
     private updateUI() {
         const current = this.simulation.currentPrice;
         this.priceText.setText(`$${current.toFixed(2)}`);

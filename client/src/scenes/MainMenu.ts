@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { MatrixEffect } from './MatrixEffect';
 import { AudioManager } from './AudioManager';
+import { gameState } from '../logic/GameState'; // Импорт
 
 export class MainMenu extends Phaser.Scene {
     private matrixEffect!: MatrixEffect;
@@ -49,6 +50,7 @@ export class MainMenu extends Phaser.Scene {
         }).setOrigin(0.5);
 
         startBtn.on('pointerdown', () => {
+            gameState.reset();
             this.tweens.add({
                 targets: [startBtn, btnText],
                 scale: 0.95,
@@ -58,10 +60,7 @@ export class MainMenu extends Phaser.Scene {
                     // --- ИСПРАВЛЕНИЕ ТУТ ---
                     // Было: this.scene.start('MainGame');
                     // Стало: идем в Брифинг (начало дня)
-                    this.scene.start('BriefingScene', { 
-                        dayNumber: 1, 
-                        cash: 10000 
-                    });
+                    this.scene.start('BriefingScene');
                 }
             });
         });

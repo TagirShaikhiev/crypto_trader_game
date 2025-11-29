@@ -106,6 +106,11 @@ export class TradingPanel extends BasePanel {
 
         return cont;
     }
+    
+    public setInput(val: string) {
+        this.inputAmount = val;
+        this.inputText.setText(val);
+    }
 
     public handleInput(e: KeyboardEvent) {
         if (!this.scene) return;
